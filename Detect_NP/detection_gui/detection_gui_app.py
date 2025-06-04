@@ -429,10 +429,54 @@ class Detection_gui(ctk.CTk):
 
         return coord_initial
 
-    #def movement(self, grid_x, grid_y, step_size, microscope):
-    #    microscope.specimen.stage.relative_move(StagePosition(x=grid_x * step_size, y=grid_y * step_size))
-    #    image = microscope.acquisition.acquire_stem_image(DetectorType.HAADF, ImageSize.PRESET_512, 1e-6) # Acquire the image
-    #    self.detect_and_plot(image=image, th=0.2)  # Detect and plot the particles in the image
+    # ------------------------------------------------------------------
+    # Example microscope acquisition routines using AutoScript
+    # ------------------------------------------------------------------
+    # The following functions are extracted from `Testing_detect_NPs.ipynb`
+    # and adapted to fit inside the application. They are currently
+    # commented out and serve only as a reference for future integration.
+
+    # def acquire_microscope_image(self, microscope):
+    #     """Capture a STEM image using a connected microscope."""
+    #     return microscope.acquisition.acquire_stem_image(
+    #         DetectorType.HAADF,
+    #         ImageSize.PRESET_512,
+    #         1e-6
+    #     )
+
+    # def detect_and_plot_microscope(self, microscope, th=0.5):
+    #     """Acquire an image from the microscope and run the model."""
+    #     image = self.acquire_microscope_image(microscope)
+    #     return self.detect_and_plot(image=image, th=th)
+
+    # def detect_and_save_microscope(self, microscope, index=1, th=0.5):
+    #     """Detect nanoparticles in the acquired image and save results."""
+    #     microscope_img = self.acquire_microscope_image(microscope)
+    #     pred, boxes, crops, coords = self.detect_and_plot(
+    #         microscope_img,
+    #         th=th
+    #     )
+    #     self.save_capture(index, microscope_img, pred, boxes, crops, coords)
+
+    # def movement(self, grid_x, grid_y, step_size, microscope):
+    #     """Move the stage to a new position and analyse the image."""
+    #     microscope.specimen.stage.relative_move(
+    #         StagePosition(x=grid_x * step_size, y=grid_y * step_size)
+    #     )
+    #     img = self.acquire_microscope_image(microscope)
+    #     self.detect_and_plot(img, th=0.2)
+
+    # def run_spiral_acquisition(self, microscope, num_images=1000, step_size=0.0001):
+    #     """Example routine to acquire images following a spiral movement."""
+    #     initial_pos = microscope.specimen.stage.position
+    #     steps = self.build_spiral_coordinates(total_cells=num_images // 2)
+    #     for idx, (dx, dy) in enumerate(steps, start=1):
+    #         microscope.specimen.stage.relative_move(
+    #             StagePosition(x=dx * step_size, y=dy * step_size)
+    #         )
+    #         self.detect_and_save_microscope(microscope, index=idx, th=0.5)
+    #         microscope.specimen.stage.absolute_move_safe(initial_pos)
+
 
     
 # This is the main function that runs the GUI application   

@@ -43,17 +43,22 @@ class Detection_gui(ctk.CTk):
         self.iconbitmap(icon_path)
         
         # Data managment
+        # General image data
         self.list_index = []
         self.list_name = []
         self.list_x = []
         self.list_y = []
-        self.list_Pcoordinates = []
+        # Particle data
+        self.list_np = []
+        self.list_npx = []
+        self.list_npy = []
 
-        self.metadata_dic = {'Index' : [],
-                             "Sample" : [],
-                             'Coordinate_x' : [],
-                             'Coordinate_y' : [],
-                             "Particle_Coordinates" : []}
+        self.metadata_dic = {
+            'Index': [],
+            'Sample': [],
+            'Coordinate_x': [],
+            'Coordinate_y': []
+        }
 
         # Frames set up
         self.frame_acquisition = ctk.CTkScrollableFrame(self, orientation='horizontal', height=250)
@@ -177,15 +182,20 @@ class Detection_gui(ctk.CTk):
             im = Image.fromarray(random_array_int)
             self.save_image(im, np_directory,f"Image_np{i}",  save = False)
 
-        self.list_Pcoordinates.append(new_list)
+        # Store coordinates for testing
+        self.list_np.extend(range(1, self.number_added + 1))
+        for coord in new_list:
+            x, y = coord
+            self.list_npx.append(x)
+            self.list_npy.append(y)
 
 
     def load_sample(self):
         self.restart_frame_acquisition()
-
-        if os.path.exists(self.directory.directory + '/metadata.csv'):
+        metadata_path = os.path.join(self.directory.directory, 'metadata.csv')
+        if os.path.exists(metadata_path):
+            self.number_added = 0
             self.load_data()
-            self.number_added = int(self.np_index.get())
         else:
             self.restart_sample()
 
@@ -201,23 +211,31 @@ class Detection_gui(ctk.CTk):
         self.list_name = []
         self.list_x = []
         self.list_y = []
-        self.list_Pcoordinates = []
+        self.list_np = []
+        self.list_npx = []
+        self.list_npy = []
 
     # Save the metadata
     def save_data(self):
-        self.metadata_dic = {'Index' : self.list_index,
-                        "Sample" : self.list_name,
-                        'Coordinate_x' : self.list_x,
-                        'Coordinate_y' : self.list_y,
-                        "Particles_coordinates": self.list_Pcoordinates}
+        self.metadata_dic = {
+            'Index': self.list_index,
+            'Sample': self.list_name,
+            'Coordinate_x': self.list_x,
+            'Coordinate_y': self.list_y
+        }
         
         self.metadata = pd.DataFrame(self.metadata_dic)
-        self.metadata.to_csv(self.directory.directory + '\metadata.csv', sep='\t', index = False)
-        self.metadata.to_excel(self.directory.directory + '\metadata.xlsx', index = False)
+        csv_path = os.path.join(self.directory.directory, 'metadata.csv')
+        xls_path = os.path.join(self.directory.directory, 'metadata.xlsx')
+        self.metadata.to_csv(csv_path, sep='\t', index=False)
+        self.metadata.to_excel(xls_path, index=False)
 
     # Load the metadata
     def load_data(self):
-        filepath = self.directory.directory + '/metadata.csv'
+        filepath = os.path.join(self.directory.directory, 'metadata.csv')
+        if not os.path.exists(filepath):
+            return
+
         self.metadata = pd.read_csv(filepath, sep='\t')
         self.metadata.fillna('', inplace=True)
 
@@ -225,35 +243,26 @@ class Detection_gui(ctk.CTk):
         self.list_name = list(self.metadata.Sample)
         self.list_x = list(self.metadata.Coordinate_x)
         self.list_y = list(self.metadata.Coordinate_y)
-        self.list_Pcoordinates = list(self.metadata.Particles_coordinates)
 
         self.np_index.set(len(self.list_index))
 
-        coordinates_list = eval(self.list_Pcoordinates[self.number_added-1])
-        for i in range(len(coordinates_list)):
-            im = Image.open(self.directory.directory + "\\" + self.list_name[self.number_added-1] + "_NP_Detected" + "\\" + f"Image_np{i}.png")
-            im = np.array(im)
-            new_nano = Interactive_image(self.frame_acquisition, im, title = f'NP_{i+1}', subtitle=f'Coords: {coordinates_list[i]}', font=('American typewriter', 24), subfont=('American typewriter', 14), width=150, height=150)
-            new_nano.pack(side = 'left')
+        if self.number_added == 0:
+            self.number_added = len(self.list_index)
 
-        im = Image.open(self.directory.directory + "\\" +self.list_name[self.number_added-1])
-        im = np.array(im)
-        self.image_microscope.change_image(im)
-        self.image_prediction.change_image(im)
+        if self.number_added >= 1:
+            self.display_capture(self.number_added)
             
     def previous_image(self):
         if self.number_added > 1:
             self.number_added -= 1
-            self.restart_frame_acquisition()
-            self.load_data()
+            self.display_capture(self.number_added)
         else:
             print("No previous image available")
 
     def next_image(self):
         if self.number_added < len(self.list_index):
-            self.restart_frame_acquisition()
             self.number_added += 1
-            self.load_data()
+            self.display_capture(self.number_added)
         else:
             print("No next image available")
 
@@ -266,6 +275,39 @@ class Detection_gui(ctk.CTk):
 
     def show_navigation(self):
         self.frame_settings.frame_image.pack(padx = 5, pady = 10, fill = 'x')
+
+    def display_capture(self, index):
+        self.restart_frame_acquisition()
+        cap_dir = os.path.join(self.directory.directory, f"Image_{index:04d}")
+
+        overview_path = os.path.join(cap_dir, f"Overview_{index:04d}.png")
+        boxes_path = os.path.join(cap_dir, f"Overview_detection_{index:04d}.png")
+        if os.path.exists(overview_path):
+            im = np.array(Image.open(overview_path))
+            self.image_microscope.change_image(im)
+        if os.path.exists(boxes_path):
+            im_pred = np.array(Image.open(boxes_path))
+            self.image_prediction.change_image(im_pred)
+
+        particles_dir = os.path.join(cap_dir, "particles")
+        particles_csv = os.path.join(particles_dir, "particles.csv")
+        if os.path.exists(particles_csv):
+            pmeta = pd.read_csv(particles_csv)
+            for _, row in pmeta.iterrows():
+                p_path = os.path.join(particles_dir, f"particle_{int(row['NP']):04d}.png")
+                if os.path.exists(p_path):
+                    im_p = np.array(Image.open(p_path))
+                    new_nano = Interactive_image(
+                        self.frame_acquisition,
+                        im_p,
+                        title='NP',
+                        subtitle=f"Coords: ({row['Coordinate_y']},{row['Coordinate_x']})",
+                        font=('American typewriter', 24),
+                        subfont=('American typewriter', 14),
+                        width=150,
+                        height=150
+                    )
+                    new_nano.pack(side='left')
 
     def pause(self, seconds=0.5):
         self.update_idletasks()
@@ -312,27 +354,38 @@ class Detection_gui(ctk.CTk):
         return image_pred, image_boxes, crops, coords
 
     def save_capture(self, cap_id, microscope_img, pred_img, boxes_img, crops, coords, zone=None):
-        base_dir = os.path.join(self.directory.directory, "Images")
-        cap_dir = os.path.join(base_dir, f"capture_{cap_id:04d}")
+        base_dir = self.directory.directory
+        cap_dir = os.path.join(base_dir, f"Image_{cap_id:04d}")
         os.makedirs(cap_dir, exist_ok=True)
 
-        Image.fromarray(microscope_img).save(os.path.join(cap_dir, "microscope.png"))
-        Image.fromarray(pred_img).save(os.path.join(cap_dir, "prediction.png"))
-        Image.fromarray(boxes_img).save(os.path.join(cap_dir, "boxes.png"))
+        Image.fromarray(microscope_img).save(os.path.join(cap_dir, f"Overview_{cap_id:04d}.png"))
+        Image.fromarray(boxes_img).save(os.path.join(cap_dir, f"Overview_detection_{cap_id:04d}.png"))
 
-        pd.DataFrame({"zone": [zone] if zone is not None else [""]}).to_excel(
-            os.path.join(cap_dir, "capture_data.xlsx"), index=False
-        )
+        df_zone = pd.DataFrame({"zone": [zone] if zone is not None else [""]})
+        df_zone.to_csv(os.path.join(cap_dir, "image_data.csv"), index=False)
+        df_zone.to_excel(os.path.join(cap_dir, "image_data.xlsx"), index=False)
 
-        np_dir = os.path.join(cap_dir, "nanoparticles")
+        np_dir = os.path.join(cap_dir, "particles")
         os.makedirs(np_dir, exist_ok=True)
         np_data = []
-        for i, (crop, info) in enumerate(zip(crops, coords)):
-            Image.fromarray(crop).save(os.path.join(np_dir, f"np_{i+1}.png"))
-            info_dict = {"np": i+1, **info}
+        for i, (crop, info) in enumerate(zip(crops, coords), start=1):
+            Image.fromarray(crop).save(os.path.join(np_dir, f"particle_{i:04d}.png"))
+            info_dict = {"Index": cap_id, "NP": i, "Coordinate_x": info['col'], "Coordinate_y": info['row']}
             np_data.append(info_dict)
         if np_data:
-            pd.DataFrame(np_data).to_excel(os.path.join(np_dir, "particles.xlsx"), index=False)
+            df_particles = pd.DataFrame(np_data)
+            df_particles.to_csv(os.path.join(np_dir, "particles.csv"), index=False)
+            df_particles.to_excel(os.path.join(np_dir, "particles.xlsx"), index=False)
+
+        self.list_index.append(cap_id)
+        self.list_name.append(f"Image_{cap_id:04d}")
+        if coords:
+            self.list_x.append(coords[0]['col'])
+            self.list_y.append(coords[0]['row'])
+        else:
+            self.list_x.append(0)
+            self.list_y.append(0)
+        self.save_data()
 
     # <-------------------------------------------------------------------------Microscope Movement Functions------------------------------------------------------------------------->
     def build_spiral_coordinates(self, total_cells=12):

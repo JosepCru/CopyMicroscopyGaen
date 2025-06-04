@@ -124,27 +124,7 @@ class Detection_gui(ctk.CTk):
             self.start_acquisition()
 
             max_particles = int(self.np_number.get())
-            captured = 0
-            start_id = len(self.list_index)
-
-            while captured < max_particles:
-                microscope_img = self.acquire_microscope_image()
-                pred, boxes, crops, coords = self.detect_and_plot(microscope_img, th=0.2)
-
-                for crop, info in zip(crops, coords):
-                    if captured >= max_particles:
-                        break
-                    self.move_to_particle(info)
-                    self.auto_zoom_particle()
-                    particle_img = self.acquire_microscope_image()
-
-                    self.restart_frame_acquisition()
-                    self.image_microscope.change_image(particle_img)
-                    self.image_prediction.change_image(pred)
-
-                    cap_id = start_id + captured + 1
-                    self.save_capture(cap_id, particle_img, pred, boxes, [crop], [info])
-                    captured += 1
+            captured = self.run_spiral_acquisition(max_particles=max_particles, step_size=1e-6, th=0.2)
 
             self.number_added = captured
             self.current_image = len(self.list_index)
@@ -377,8 +357,15 @@ class Detection_gui(ctk.CTk):
         )
 
     def auto_zoom_particle(self):
-        """Placeholder for automatic magnification."""
-        pass
+        """Try to automatically increase the magnification on the microscope."""
+        if self.microscope is None:
+            return
+
+        try:
+            current_mag = self.microscope.imaging.magnification.value
+            self.microscope.imaging.magnification.value = current_mag * 1.2
+        except Exception as exc:
+            print(f"Could not auto zoom: {exc}")
 
     def detect_and_plot_microscope(self, th=0.5):
         image = self.acquire_microscope_image()
@@ -417,17 +404,60 @@ class Detection_gui(ctk.CTk):
                     step_limit += 1
         return coord_initial
 
-    def run_spiral_acquisition(self, num_images=1000, step_size=0.0001, th=0.5):
+    def run_spiral_acquisition(self, max_particles, step_size=1e-6, th=0.5):
+        """Move the stage following a spiral pattern and capture nanoparticles.
+
+        Parameters
+        ----------
+        max_particles : int
+            Number of nanoparticle images to acquire.
+        step_size : float, optional
+            Stage movement step for both spiral navigation and centering the
+            particles.
+        th : float, optional
+            Threshold used during prediction.
+        """
+
         if self.microscope is None:
-            return
+            return 0
+
+        captured = 0
+        start_id = len(self.list_index)
         initial_pos = self.microscope.specimen.stage.position
-        steps = self.build_spiral_coordinates(total_cells=num_images // 2)
-        for idx, (dx, dy) in enumerate(steps, start=1):
+        steps = self.build_spiral_coordinates(total_cells=max_particles * 2)
+
+        for dx, dy in steps:
+            if captured >= max_particles:
+                break
+
             self.microscope.specimen.stage.relative_move(
                 StagePosition(x=dx * step_size, y=dy * step_size)
             )
-            self.detect_and_save_microscope(index=idx, th=th)
+
+            microscope_img = self.acquire_microscope_image()
+            pred_img, boxes_img, crops, coords = self.detect_and_plot(microscope_img, th=th)
+
+            for crop, info in zip(crops, coords):
+                if captured >= max_particles:
+                    break
+
+                self.move_to_particle(info, step_size=step_size)
+                self.auto_zoom_particle()
+                particle_img = self.acquire_microscope_image()
+
+                self.restart_frame_acquisition()
+                self.image_microscope.change_image(particle_img)
+                self.image_prediction.change_image(pred_img)
+
+                cap_id = start_id + captured + 1
+                self.save_capture(cap_id, particle_img, pred_img, boxes_img, [crop], [info])
+                captured += 1
+
+                # Return to the overview position
+                self.move_to_particle({'row': -info['row'], 'col': -info['col']}, step_size=step_size)
+
         self.microscope.specimen.stage.absolute_move_safe(initial_pos)
+        return captured
 
 if __name__ == '__main__':
     app = Detection_gui()

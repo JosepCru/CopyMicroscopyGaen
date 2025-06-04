@@ -92,8 +92,8 @@ class Detection_gui(ctk.CTk):
             self.zeros,
             title='Microscope Image',
             font=('American typewriter', 24),
-            width=450,
-            height=450,
+            width=650,
+            height=650,
         )
         self.image_microscope.pack()
 
@@ -102,8 +102,8 @@ class Detection_gui(ctk.CTk):
             self.zeros,
             title='Model prediction',
             font=('American typewriter', 24),
-            width=450,
-            height=450,
+            width=650,
+            height=650,
         )
         self.image_prediction.pack()
 
@@ -123,7 +123,7 @@ class Detection_gui(ctk.CTk):
 
             max_particles = int(self.np_number.get())
             folder = "C:\\Users\\josep\\Desktop\\extra_training\\images"
-            image_files = [f for f in os.listdir(folder) if f.lower().endswith((".png", ".jpg", ".jpeg"))]
+            image_files = [f for f in os.listdir(folder) if f.lower().endswith((".png"))]
             image_files.sort()
             captured = 0
             start_id = len(self.list_index)

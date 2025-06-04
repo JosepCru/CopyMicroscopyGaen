@@ -308,7 +308,7 @@ class Detection_gui(ctk.CTk):
         self.image_microscope.change_image(image_boxes)
         return image_pred, image_boxes, crops, coords
 
-    def save_capture(self, cap_id, microscope_img, pred_img, boxes_img, crops, coords, zone=None):
+    def save_capture(self, cap_id, microscope_img, pred_img, boxes_img, crops=None, coords=None, zone=None):
         base_dir = self.directory.directory
         cap_dir = os.path.join(base_dir, f"Image_{cap_id:04d}")
         os.makedirs(cap_dir, exist_ok=True)
@@ -324,10 +324,28 @@ class Detection_gui(ctk.CTk):
         np_dir = os.path.join(cap_dir, "particles")
         os.makedirs(np_dir, exist_ok=True)
         np_data = []
-        for i, (crop, info) in enumerate(zip(crops, coords), start=1):
-            Image.fromarray(crop).save(os.path.join(np_dir, f"particle_{i:04d}.png"))
-            info_dict = {"Index": cap_id, "NP": i, "Coordinate_x": info['col'], "Coordinate_y": info['row']}
+
+        if crops is None:
+            info = coords[0] if coords else {"col": 0, "row": 0}
+            Image.fromarray(microscope_img).save(os.path.join(np_dir, "particle_0001.png"))
+            info_dict = {
+                "Index": cap_id,
+                "NP": 1,
+                "Coordinate_x": info["col"],
+                "Coordinate_y": info["row"],
+            }
             np_data.append(info_dict)
+        else:
+            for i, (crop, info) in enumerate(zip(crops, coords), start=1):
+                Image.fromarray(crop).save(os.path.join(np_dir, f"particle_{i:04d}.png"))
+                info_dict = {
+                    "Index": cap_id,
+                    "NP": i,
+                    "Coordinate_x": info["col"],
+                    "Coordinate_y": info["row"],
+                }
+                np_data.append(info_dict)
+
         if np_data:
             df_particles = pd.DataFrame(np_data)
             df_particles.to_csv(os.path.join(np_dir, "particles.csv"), index=False)
@@ -373,8 +391,8 @@ class Detection_gui(ctk.CTk):
 
     def detect_and_save_microscope(self, index=1, th=0.5):
         microscope_img = self.acquire_microscope_image()
-        pred, boxes, crops, coords = self.detect_and_plot(microscope_img, th=th)
-        self.save_capture(index, microscope_img, pred, boxes, crops, coords)
+        pred, boxes, _, coords = self.detect_and_plot(microscope_img, th=th)
+        self.save_capture(index, microscope_img, pred, boxes, crops=None, coords=coords)
 
     def movement(self, grid_x, grid_y, step_size=1e-6):
         if self.microscope is None:
@@ -437,7 +455,7 @@ class Detection_gui(ctk.CTk):
             microscope_img = self.acquire_microscope_image()
             pred_img, boxes_img, crops, coords = self.detect_and_plot(microscope_img, th=th)
 
-            for crop, info in zip(crops, coords):
+            for info in coords:
                 if captured >= max_particles:
                     break
 
@@ -450,7 +468,7 @@ class Detection_gui(ctk.CTk):
                 self.image_prediction.change_image(pred_img)
 
                 cap_id = start_id + captured + 1
-                self.save_capture(cap_id, particle_img, pred_img, boxes_img, [crop], [info])
+                self.save_capture(cap_id, particle_img, pred_img, boxes_img, crops=None, coords=[info])
                 captured += 1
 
                 # Return to the overview position

@@ -10,6 +10,9 @@ import cv2
 from auxiliar_functions import create_boxes, isolate_particles, normalize_image
 import time
 
+from autoscript_tem_microscope_client import TemMicroscopeClient
+from autoscript_tem_microscope_client.enumerations import DetectorType, ImageSize
+from autoscript_tem_microscope_client.structures import StagePosition
 
 sys.path.append(os.path.abspath('.'))
 
@@ -107,6 +110,13 @@ class Detection_gui(ctk.CTk):
         self.model_ml = torch.load('ModelNP_newContrast_900.pt')
         self.load_sample()
 
+        try:
+            self.microscope = TemMicroscopeClient()
+            self.microscope.connect()
+        except Exception as exc:
+            print(f"Could not connect to microscope: {exc}")
+            self.microscope = None
+
 
 # This is the function that we call when the button Start is pressed, we should start here the routine of detection
     def toggle_acquisition(self):
@@ -114,25 +124,28 @@ class Detection_gui(ctk.CTk):
             self.start_acquisition()
 
             max_particles = int(self.np_number.get())
-            folder = "C:\\Users\\josep\\Desktop\\extra_training\\images"
-            image_files = [f for f in os.listdir(folder) if f.lower().endswith((".png"))]
-            image_files.sort()
             captured = 0
             start_id = len(self.list_index)
-            for idx, fname in enumerate(image_files):
-                if captured >= max_particles:
-                    break
-                path = os.path.join(folder, fname)
-                image = cv2.imread(path, cv2.IMREAD_GRAYSCALE)
 
-                self.restart_frame_acquisition()
-                pred, boxes, crops, coords = self.detect_and_plot(image, th=0.2)
-                captured += len(crops)
-                self.np_index.set(captured)
-                cap_id = start_id + idx + 1
-                self.save_capture(cap_id, image, pred, boxes, crops, coords)
-                if captured >= max_particles:
-                    break
+            while captured < max_particles:
+                microscope_img = self.acquire_microscope_image()
+                pred, boxes, crops, coords = self.detect_and_plot(microscope_img, th=0.2)
+
+                for crop, info in zip(crops, coords):
+                    if captured >= max_particles:
+                        break
+                    self.move_to_particle(info)
+                    self.auto_zoom_particle()
+                    particle_img = self.acquire_microscope_image()
+
+                    self.restart_frame_acquisition()
+                    self.image_microscope.change_image(particle_img)
+                    self.image_prediction.change_image(pred)
+
+                    cap_id = start_id + captured + 1
+                    self.save_capture(cap_id, particle_img, pred, boxes, [crop], [info])
+                    captured += 1
+
             self.number_added = captured
             self.current_image = len(self.list_index)
             self.stop_acquisition()
@@ -346,6 +359,75 @@ class Detection_gui(ctk.CTk):
         self.list_y.append(coord_y)
         self.current_image = cap_id
         self.save_data()
+
+    def acquire_microscope_image(self):
+        if self.microscope is None:
+            raise RuntimeError("Microscope not connected")
+        return self.microscope.acquisition.acquire_stem_image(
+            DetectorType.HAADF,
+            ImageSize.PRESET_512,
+            1e-6
+        )
+
+    def move_to_particle(self, info, step_size=1e-6):
+        if self.microscope is None:
+            return
+        self.microscope.specimen.stage.relative_move(
+            StagePosition(x=info['col'] * step_size, y=info['row'] * step_size)
+        )
+
+    def auto_zoom_particle(self):
+        """Placeholder for automatic magnification."""
+        pass
+
+    def detect_and_plot_microscope(self, th=0.5):
+        image = self.acquire_microscope_image()
+        return self.detect_and_plot(image=image, th=th)
+
+    def detect_and_save_microscope(self, index=1, th=0.5):
+        microscope_img = self.acquire_microscope_image()
+        pred, boxes, crops, coords = self.detect_and_plot(microscope_img, th=th)
+        self.save_capture(index, microscope_img, pred, boxes, crops, coords)
+
+    def movement(self, grid_x, grid_y, step_size=1e-6):
+        if self.microscope is None:
+            return
+        self.microscope.specimen.stage.relative_move(
+            StagePosition(x=grid_x * step_size, y=grid_y * step_size)
+        )
+        img = self.acquire_microscope_image()
+        self.detect_and_plot(img, th=0.2)
+
+    def build_spiral_coordinates(self, total_cells=12):
+        coord_initial = []
+        directions = [(0, 1), (-1, 0), (0, -1), (1, 0)]
+        direction_index = 0
+        step_count = 0
+        step_limit = 1
+        direction_changes = 0
+
+        while len(coord_initial) < total_cells:
+            coord_initial.append(directions[direction_index])
+            step_count += 1
+            if step_count == step_limit:
+                step_count = 0
+                direction_index = (direction_index + 1) % 4
+                direction_changes += 1
+                if direction_changes % 2 == 0:
+                    step_limit += 1
+        return coord_initial
+
+    def run_spiral_acquisition(self, num_images=1000, step_size=0.0001, th=0.5):
+        if self.microscope is None:
+            return
+        initial_pos = self.microscope.specimen.stage.position
+        steps = self.build_spiral_coordinates(total_cells=num_images // 2)
+        for idx, (dx, dy) in enumerate(steps, start=1):
+            self.microscope.specimen.stage.relative_move(
+                StagePosition(x=dx * step_size, y=dy * step_size)
+            )
+            self.detect_and_save_microscope(index=idx, th=th)
+        self.microscope.specimen.stage.absolute_move_safe(initial_pos)
 
 if __name__ == '__main__':
     app = Detection_gui()

@@ -83,6 +83,7 @@ class Detection_gui(ctk.CTk):
 
         self.is_running = False
         self.zeros = np.zeros((256,256))
+        self.current_image = 0
         
         # Images set up
         self.image_microscope = Interactive_image(self.frame_images, self.zeros, title = 'Microscope Image', font=('American typewriter', 24), width= 720, height= 720)
@@ -123,6 +124,7 @@ class Detection_gui(ctk.CTk):
                 if captured >= max_particles:
                     break
             self.number_added = captured
+            self.current_image = len(self.list_index)
             self.stop_acquisition()
         else:
             self.stop_acquisition()
@@ -206,6 +208,7 @@ class Detection_gui(ctk.CTk):
 
         # Empty data
         self.number_added = 0
+        self.current_image = 0
         self.np_index.set(0)
         self.list_index = []
         self.list_name = []
@@ -246,23 +249,21 @@ class Detection_gui(ctk.CTk):
 
         self.np_index.set(len(self.list_index))
 
-        if self.number_added == 0:
-            self.number_added = len(self.list_index)
-
-        if self.number_added >= 1:
-            self.display_capture(self.number_added)
+        if self.list_index:
+            self.current_image = len(self.list_index)
+            self.display_capture(self.current_image)
             
     def previous_image(self):
-        if self.number_added > 1:
-            self.number_added -= 1
-            self.display_capture(self.number_added)
+        if self.current_image > 1:
+            self.current_image -= 1
+            self.display_capture(self.current_image)
         else:
             print("No previous image available")
 
     def next_image(self):
-        if self.number_added < len(self.list_index):
-            self.number_added += 1
-            self.display_capture(self.number_added)
+        if self.current_image < len(self.list_index):
+            self.current_image += 1
+            self.display_capture(self.current_image)
         else:
             print("No next image available")
 
@@ -278,6 +279,7 @@ class Detection_gui(ctk.CTk):
 
     def display_capture(self, index):
         self.restart_frame_acquisition()
+        self.current_image = index
         cap_dir = os.path.join(self.directory.directory, f"Image_{index:04d}")
 
         overview_path = os.path.join(cap_dir, f"Overview_{index:04d}.png")
@@ -360,8 +362,17 @@ class Detection_gui(ctk.CTk):
 
         Image.fromarray(microscope_img).save(os.path.join(cap_dir, f"Overview_{cap_id:04d}.png"))
         Image.fromarray(boxes_img).save(os.path.join(cap_dir, f"Overview_detection_{cap_id:04d}.png"))
+        Image.fromarray(pred_img).save(os.path.join(cap_dir, f"Prediction_{cap_id:04d}.png"))
 
-        df_zone = pd.DataFrame({"zone": [zone] if zone is not None else [""]})
+        coord_x = coords[0]['col'] if coords else cap_id
+        coord_y = coords[0]['row'] if coords else cap_id
+        df_zone = pd.DataFrame({
+            "Index": [cap_id],
+            "Sample": [f"Image_{cap_id:04d}"],
+            "Coordinate_x": [coord_x],
+            "Coordinate_y": [coord_y],
+            "zone": [zone if zone is not None else ""]
+        })
         df_zone.to_csv(os.path.join(cap_dir, "image_data.csv"), index=False)
         df_zone.to_excel(os.path.join(cap_dir, "image_data.xlsx"), index=False)
 
@@ -379,12 +390,9 @@ class Detection_gui(ctk.CTk):
 
         self.list_index.append(cap_id)
         self.list_name.append(f"Image_{cap_id:04d}")
-        if coords:
-            self.list_x.append(coords[0]['col'])
-            self.list_y.append(coords[0]['row'])
-        else:
-            self.list_x.append(0)
-            self.list_y.append(0)
+        self.list_x.append(coord_x)
+        self.list_y.append(coord_y)
+        self.current_image = cap_id
         self.save_data()
 
     # <-------------------------------------------------------------------------Microscope Movement Functions------------------------------------------------------------------------->

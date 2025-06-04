@@ -9,6 +9,7 @@ import torch
 import torch.utils.data
 import cv2
 from auxiliar_functions import create_boxes, isolate_particles
+import time
 
 #from autoscript_tem_microscope_client import TemMicroscopeClient
 #from autoscript_tem_microscope_client.enumerations import *
@@ -99,31 +100,25 @@ class Detection_gui(ctk.CTk):
         if not self.is_running:
             self.start_acquisition()
 
-            num_images=int(self.np_number.get())
+            max_particles = int(self.np_number.get())
+            folder = "C:\\Users\\josep\\Desktop\\extra_training\\images"
+            image_files = [f for f in os.listdir(folder) if f.lower().endswith((".png", ".jpg", ".jpeg"))]
+            image_files.sort()
+            captured = 0
+            for idx, fname in enumerate(image_files):
+                if captured >= max_particles:
+                    break
+                path = os.path.join(folder, fname)
+                image = cv2.imread(path, cv2.IMREAD_GRAYSCALE)
 
-            for i in range(num_images):
-                image = f"C:\\Users\\josep\\Desktop\\extra_training\\images\\image_{i:04d}.png"
-                image = cv2.imread(image, cv2.IMREAD_GRAYSCALE)
-
-                # Movement and detection
-
-                self.number_added = int(self.np_index.get()) + 1
-                self.np_index.set(self.number_added)
-                self.detect_and_plot(image, th=0.2)  # Assuming the image is a grayscale image
-
-                #microscope = TemMicroscopeClient()
-                #microscope.connect()
-                #microscope.optics.optical_mode = OpticalMode.STEM
-                #num_images = 1000
-                #step_size = 0.0001
-                #movement_direction = self.build_spiral_coordinates(total_cells=total_steps)
-                #for (x, y) in movement_direction:
-                #    self.movement(x, y, step_size, microscope)
-
-            # Testing, we should start here the routine of detection
-            #self.number_added = int(self.np_index.get()) + 1
-            #self.np_index.set(self.number_added)
-            #self.create_particle_image(self.number_added)
+                pred, boxes, crops, coords = self.detect_and_plot(image, th=0.2)
+                captured += len(crops)
+                self.np_index.set(captured)
+                self.save_capture(idx+1, image, pred, boxes, crops, coords)
+                if captured >= max_particles:
+                    break
+            self.number_added = captured
+            self.stop_acquisition()
         else:
             self.stop_acquisition()
             
@@ -272,6 +267,10 @@ class Detection_gui(ctk.CTk):
     def show_navigation(self):
         self.frame_settings.frame_image.pack(padx = 5, pady = 10, fill = 'x')
 
+    def pause(self, seconds=0.5):
+        self.update_idletasks()
+        time.sleep(seconds)
+
     # <-------------------------------------------------------------------------Particle Plotting Functions------------------------------------------------------------------------->
     
     def prediction(self, image, th=0.5):
@@ -281,32 +280,59 @@ class Detection_gui(ctk.CTk):
         return labeled_mask, zones, num_particles, pred_mask
 
     def plot_particles(self, image, final_bboxes,image_color=None):
+        crops = []
+        coords = []
         for bbox in final_bboxes:
             start_row, start_col, side = bbox
             cv2.rectangle(image_color,
                         (start_col, start_row),
                         (start_col + side, start_row + side),
                         (0, 0, 255), 4)
-            r, c, s = bbox
-            particle_img = image[r:r+s, c:c+s]
+            particle_img = image[start_row:start_row+side, start_col:start_col+side]
             particle_crop = np.array(particle_img).astype(np.uint8)
+            crops.append(particle_crop)
+            coords.append({'row': start_row, 'col': start_col, 'side': side})
 
-            new_nano = Interactive_image(self.frame_acquisition, particle_crop, title = f'NP', subtitle=f'Coords:', font=('American typewriter', 24), subfont=('American typewriter', 14), width=150, height=150)
+            new_nano = Interactive_image(self.frame_acquisition, particle_crop, title = f'NP', subtitle=f'Coords: ({start_row},{start_col})', font=('American typewriter', 24), subfont=('American typewriter', 14), width=150, height=150)
             new_nano.pack(side = 'left')
+            self.pause()
+        return crops, coords
 
     def detect_and_plot(self, image, th = 0.5, min_particle_size = 0.1):
         self.image_microscope.change_image(image)
         image_pred, zones, num_particles, pred_mask = self.prediction(image, th=th)
         self.image_prediction.change_image(image_pred)
-        centers, final_bboxes = create_boxes(image, min_particle_size=min_particle_size, th=th, 
+        centers, final_bboxes = create_boxes(image, min_particle_size=min_particle_size, th=th,
                                                                num_particles=num_particles, labeled_mask=image_pred, zones=zones, pred_mask=pred_mask)
-        
+
         image_boxes = cv2.cvtColor(image, cv2.COLOR_GRAY2BGR)
 
+        crops, coords = self.plot_particles(image, final_bboxes, image_color=image_boxes)
         self.image_microscope.change_image(image_boxes)
+        return image_pred, image_boxes, crops, coords
 
-        # Quitar este y cambiar por movimiento y captura de nanoparticulas
-        self.plot_particles(image, final_bboxes, image_color=image_boxes)
+    def save_capture(self, cap_id, microscope_img, pred_img, boxes_img, crops, coords, zone=None):
+        base_dir = os.path.join(self.directory.directory, "Images")
+        cap_dir = os.path.join(base_dir, f"capture_{cap_id:04d}")
+        os.makedirs(cap_dir, exist_ok=True)
+
+        Image.fromarray(microscope_img).save(os.path.join(cap_dir, "microscope.png"))
+        Image.fromarray(pred_img).save(os.path.join(cap_dir, "prediction.png"))
+        Image.fromarray(boxes_img).save(os.path.join(cap_dir, "boxes.png"))
+
+        pd.DataFrame({"zone": [zone] if zone is not None else [""]}).to_excel(
+            os.path.join(cap_dir, "capture_data.xlsx"), index=False
+        )
+
+        np_dir = os.path.join(cap_dir, "nanoparticles")
+        os.makedirs(np_dir, exist_ok=True)
+        np_data = []
+        for i, (crop, info) in enumerate(zip(crops, coords)):
+            Image.fromarray(crop).save(os.path.join(np_dir, f"np_{i+1}.png"))
+            info_dict = {"np": i+1, **info}
+            np_data.append(info_dict)
+        if np_data:
+            pd.DataFrame(np_data).to_excel(os.path.join(np_dir, "particles.xlsx"), index=False)
 
     # <-------------------------------------------------------------------------Microscope Movement Functions------------------------------------------------------------------------->
     def build_spiral_coordinates(self, total_cells=12):

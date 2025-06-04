@@ -8,7 +8,7 @@ from widgets.interactive_image import Interactive_image
 import torch
 import torch.utils.data
 import cv2
-from auxiliar_functions import create_boxes, isolate_particles
+from auxiliar_functions import create_boxes, isolate_particles, normalize_image
 import time
 
 #from autoscript_tem_microscope_client import TemMicroscopeClient
@@ -111,16 +111,19 @@ class Detection_gui(ctk.CTk):
             image_files = [f for f in os.listdir(folder) if f.lower().endswith((".png", ".jpg", ".jpeg"))]
             image_files.sort()
             captured = 0
+            start_id = len(self.list_index)
             for idx, fname in enumerate(image_files):
                 if captured >= max_particles:
                     break
                 path = os.path.join(folder, fname)
                 image = cv2.imread(path, cv2.IMREAD_GRAYSCALE)
 
+                self.restart_frame_acquisition()
                 pred, boxes, crops, coords = self.detect_and_plot(image, th=0.2)
                 captured += len(crops)
                 self.np_index.set(captured)
-                self.save_capture(idx+1, image, pred, boxes, crops, coords)
+                cap_id = start_id + idx + 1
+                self.save_capture(cap_id, image, pred, boxes, crops, coords)
                 if captured >= max_particles:
                     break
             self.number_added = captured
@@ -282,13 +285,13 @@ class Detection_gui(ctk.CTk):
         self.current_image = index
         cap_dir = os.path.join(self.directory.directory, f"Image_{index:04d}")
 
-        overview_path = os.path.join(cap_dir, f"Overview_{index:04d}.png")
         boxes_path = os.path.join(cap_dir, f"Overview_detection_{index:04d}.png")
-        if os.path.exists(overview_path):
-            im = np.array(Image.open(overview_path))
-            self.image_microscope.change_image(im)
+        pred_path = os.path.join(cap_dir, f"Prediction_{index:04d}.png")
         if os.path.exists(boxes_path):
-            im_pred = np.array(Image.open(boxes_path))
+            im_boxes = np.array(Image.open(boxes_path))
+            self.image_microscope.change_image(im_boxes)
+        if os.path.exists(pred_path):
+            im_pred = np.array(Image.open(pred_path))
             self.image_prediction.change_image(im_pred)
 
         particles_dir = os.path.join(cap_dir, "particles")
@@ -362,19 +365,11 @@ class Detection_gui(ctk.CTk):
 
         Image.fromarray(microscope_img).save(os.path.join(cap_dir, f"Overview_{cap_id:04d}.png"))
         Image.fromarray(boxes_img).save(os.path.join(cap_dir, f"Overview_detection_{cap_id:04d}.png"))
-        Image.fromarray(pred_img).save(os.path.join(cap_dir, f"Prediction_{cap_id:04d}.png"))
+        pred_norm = (normalize_image(pred_img) * 255).astype(np.uint8)
+        Image.fromarray(pred_norm).save(os.path.join(cap_dir, f"Prediction_{cap_id:04d}.png"))
 
         coord_x = coords[0]['col'] if coords else cap_id
         coord_y = coords[0]['row'] if coords else cap_id
-        df_zone = pd.DataFrame({
-            "Index": [cap_id],
-            "Sample": [f"Image_{cap_id:04d}"],
-            "Coordinate_x": [coord_x],
-            "Coordinate_y": [coord_y],
-            "zone": [zone if zone is not None else ""]
-        })
-        df_zone.to_csv(os.path.join(cap_dir, "image_data.csv"), index=False)
-        df_zone.to_excel(os.path.join(cap_dir, "image_data.xlsx"), index=False)
 
         np_dir = os.path.join(cap_dir, "particles")
         os.makedirs(np_dir, exist_ok=True)

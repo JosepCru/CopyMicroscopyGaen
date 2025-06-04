@@ -281,11 +281,15 @@ class Detection_gui(ctk.CTk):
         cap_dir = os.path.join(self.directory.directory, f"Image_{index:04d}")
 
         overview_path = os.path.join(cap_dir, f"Overview_{index:04d}.png")
+        pred_path = os.path.join(cap_dir, f"Overview_prediction_{index:04d}.png")
         boxes_path = os.path.join(cap_dir, f"Overview_detection_{index:04d}.png")
         if os.path.exists(overview_path):
             im = np.array(Image.open(overview_path))
             self.image_microscope.change_image(im)
-        if os.path.exists(boxes_path):
+        if os.path.exists(pred_path):
+            pimg = np.array(Image.open(pred_path))
+            self.image_prediction.change_image(pimg)
+        elif os.path.exists(boxes_path):
             im_pred = np.array(Image.open(boxes_path))
             self.image_prediction.change_image(im_pred)
 
@@ -358,12 +362,24 @@ class Detection_gui(ctk.CTk):
         cap_dir = os.path.join(base_dir, f"Image_{cap_id:04d}")
         os.makedirs(cap_dir, exist_ok=True)
 
-        Image.fromarray(microscope_img).save(os.path.join(cap_dir, f"Overview_{cap_id:04d}.png"))
-        Image.fromarray(boxes_img).save(os.path.join(cap_dir, f"Overview_detection_{cap_id:04d}.png"))
+        Image.fromarray(microscope_img).save(
+            os.path.join(cap_dir, f"Overview_{cap_id:04d}.png")
+        )
+        Image.fromarray(pred_img).save(
+            os.path.join(cap_dir, f"Overview_prediction_{cap_id:04d}.png")
+        )
+        Image.fromarray(boxes_img).save(
+            os.path.join(cap_dir, f"Overview_detection_{cap_id:04d}.png")
+        )
 
-        df_zone = pd.DataFrame({"zone": [zone] if zone is not None else [""]})
-        df_zone.to_csv(os.path.join(cap_dir, "image_data.csv"), index=False)
-        df_zone.to_excel(os.path.join(cap_dir, "image_data.xlsx"), index=False)
+        image_meta = pd.DataFrame({
+            "Index": [cap_id],
+            "Sample": [f"Image_{cap_id:04d}"],
+            "Coordinate_x": [cap_id],
+            "Coordinate_y": [cap_id],
+        })
+        image_meta.to_csv(os.path.join(cap_dir, "image_data.csv"), index=False)
+        image_meta.to_excel(os.path.join(cap_dir, "image_data.xlsx"), index=False)
 
         np_dir = os.path.join(cap_dir, "particles")
         os.makedirs(np_dir, exist_ok=True)
@@ -379,12 +395,9 @@ class Detection_gui(ctk.CTk):
 
         self.list_index.append(cap_id)
         self.list_name.append(f"Image_{cap_id:04d}")
-        if coords:
-            self.list_x.append(coords[0]['col'])
-            self.list_y.append(coords[0]['row'])
-        else:
-            self.list_x.append(0)
-            self.list_y.append(0)
+        # Placeholder coordinates until microscope stage movement is integrated
+        self.list_x.append(cap_id)
+        self.list_y.append(cap_id)
         self.save_data()
 
     # <-------------------------------------------------------------------------Microscope Movement Functions------------------------------------------------------------------------->

@@ -86,10 +86,25 @@ class Detection_gui(ctk.CTk):
         self.current_image = 0
         
         # Images set up
-        self.image_microscope = Interactive_image(self.frame_images, self.zeros, title = 'Microscope Image', font=('American typewriter', 24), width= 720, height= 720)
+        # Display images scaled so that they fit inside the current window
+        self.image_microscope = Interactive_image(
+            self.frame_images,
+            self.zeros,
+            title='Microscope Image',
+            font=('American typewriter', 24),
+            width=450,
+            height=450,
+        )
         self.image_microscope.pack()
 
-        self.image_prediction = Interactive_image(self.frame_prediction, self.zeros, title = 'Model prediction', font=('American typewriter', 24), width= 720, height= 720)
+        self.image_prediction = Interactive_image(
+            self.frame_prediction,
+            self.zeros,
+            title='Model prediction',
+            font=('American typewriter', 24),
+            width=450,
+            height=450,
+        )
         self.image_prediction.pack()
 
         # Simplifying commonly used variables from other scripts
